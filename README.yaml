@@ -1,4 +1,4 @@
-name: Terraform Transit Gateway Module
+name: Terraform AWS EC2 Defaults Security Baseline Setup
 #logo: logo/logo.jpg
 
 license: "APACHE2"
@@ -8,23 +8,80 @@ copyrights:
     url: "https://cloudops.works"
     year: "2024"
 
-github_repo: cloudopsworks/terraform-module-aws-vpc-setup
+github_repo: cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup
 
 description: |-
-  VPC Module for setting up transit gateway with ResourceAccessMananger support.
+  AWS EC2 Security Baseline Setup Module for configuring default security settings for EC2 instances, EBS volumes, and metadata service options across an AWS account.
 
 # Introduction to the project
-#introduction: |-
-#  This is an introduction.
+introduction: |-
+  This Terraform module implements AWS security best practices by setting up default configurations for EC2 instances
+  and EBS volumes. It manages instance metadata service settings, EBS encryption defaults, KMS key management,
+  and EBS snapshot access controls at the account level.
 
 # How to use this project
-#usage: |-
+usage: |-
+  Configure the module settings using YAML format in your terraform variables:
+
+  ```yaml
+  settings:
+    ebs:
+      encryption_by_default: true
+      snapshot_block_public_access: block-all-sharing
+      default_kms_key:
+        enabled: true
+        deletion_window_in_days: 30
+        enable_key_rotation: true
+        rotation_period_in_days: 365
+        is_enabled: true
+    instance_metadata:
+      http_endpoint: "enabled"
+      http_tokens: "required"
+      http_put_response_hop_limit: 1
+      tags: "enabled"
+  ```
 
 # Example usage
-#examples: |-
+examples: |-
+  terragrunt.hcl example:
+  ```hcl
+  include {
+    path = find_in_parent_folders()
+  }
+
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup.git?ref=v1.0.0"
+  }
+
+  inputs = {
+    settings = {
+      ebs = {
+        encryption_by_default = true
+        snapshot_block_public_access = "block-all-sharing"
+        default_kms_key = {
+          enabled = true
+        }
+      }
+      instance_metadata = {
+        http_tokens = "required"
+        http_endpoint = "enabled"
+      }
+    }
+  }
+  ```
 
 # How to get started quickly
-#quickstart: |-
+quickstart: |-
+  1. Add this module to your Terraform/Terragrunt configuration
+  2. Configure the minimum required settings:
+     ```yaml
+     settings:
+       ebs:
+         encryption_by_default: true
+       instance_metadata:
+         http_tokens: "required"
+     ```
+  3. Run terraform init and apply
 
 include:
   - "docs/targets.md"
