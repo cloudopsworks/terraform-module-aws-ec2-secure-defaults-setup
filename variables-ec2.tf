@@ -29,6 +29,11 @@
 #       - mode: "allow-ingress" | "allow-bidirectional" # Required: Mode of exclusion
 #         vpc_id: "vpc-12345678" # Optional: VPC ID to exclude from public access options
 #         subnet_id: "subnet-12345678" # Optional: Subnet ID to exclude
+#   s3:
+#     block_public_acls: true | false # default is false
+#     block_public_policy: true | false # default is false
+#     ignore_public_acls: true | false # default is false
+#     restrict_public_buckets: true | false # default is false
 variable "settings" {
   description = "Settings for the EC2 instance metadata defaults."
   type        = any

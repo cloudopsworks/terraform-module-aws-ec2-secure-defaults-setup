@@ -62,3 +62,10 @@ resource "aws_vpc_block_public_access_exclusion" "this_subnets" {
   }
   tags = local.all_tags
 }
+
+resource "aws_s3_account_public_access_block" "this" {
+  block_public_acls       = try(var.settings.s3.block_public_access.block_public_acls, null)
+  block_public_policy     = try(var.settings.s3.block_public_access.block_public_policy, null)
+  ignore_public_acls      = try(var.settings.s3.block_public_access.ignore_public_acls, null)
+  restrict_public_buckets = try(var.settings.s3.block_public_access.restrict_public_buckets, null)
+}
