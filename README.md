@@ -79,6 +79,12 @@ settings:
     http_tokens: "required"
     http_put_response_hop_limit: 1
     tags: "enabled"
+  vpc:
+    block_public_access: "block-bidirectional" | "block-ingress" | "off" # default is "off"
+    exclusions:
+      - mode: "allow-ingress" | "allow-bidirectional" # Required: Mode of exclusion
+        vpc_id: "vpc-12345678" # Optional: VPC ID to exclude from public access options
+        subnet_id: "subnet-12345678" # Optional: Subnet ID to exclude
 ```
 
 ## Quick Start
@@ -166,6 +172,9 @@ Available targets:
 | [aws_ec2_instance_metadata_defaults.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_instance_metadata_defaults) | resource |
 | [aws_kms_alias.ebs_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.ebs_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
+| [aws_vpc_block_public_access_exclusion.this_subnets](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_exclusion) | resource |
+| [aws_vpc_block_public_access_exclusion.this_vpcs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_exclusion) | resource |
+| [aws_vpc_block_public_access_options.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_options) | resource |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 
 ## Inputs
