@@ -44,28 +44,35 @@ resource "aws_ebs_snapshot_block_public_access" "this" {
 }
 
 resource "aws_vpc_block_public_access_options" "this" {
+  count                       = try(var.settings.vpc.configure_public_access, false) ? 1 : 0
   internet_gateway_block_mode = try(var.settings.vpc.block_public_access, "off")
 }
 
 resource "aws_vpc_block_public_access_exclusion" "this_vpcs" {
   for_each = {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.vpc_id => exclusion
-    if try(exclusion.vpc_id, "") != ""
+    if try(exclusion.vpc_id, "") != "" && try(var.settings.vpc.configure_public_access, false)
   }
-  tags = local.all_tags
+  internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
+  vpc_id                          = try(each.value.vpc_id, null)
+  tags                            = local.all_tags
 }
 
 resource "aws_vpc_block_public_access_exclusion" "this_subnets" {
   for_each = {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.subnet_id => exclusion
-    if try(exclusion.subnet_id, "") != ""
+    if try(exclusion.subnet_id, "") != "" && try(var.settings.vpc.configure_public_access, false)
   }
-  tags = local.all_tags
+  internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
+  vpc_id                          = try(each.value.vpc_id, null)
+  subnet_id                       = try(each.value.subnet_id, null)
+  tags                            = local.all_tags
 }
 
 resource "aws_s3_account_public_access_block" "this" {
-  block_public_acls       = try(var.settings.s3.block_public_access.block_public_acls, null)
-  block_public_policy     = try(var.settings.s3.block_public_access.block_public_policy, null)
-  ignore_public_acls      = try(var.settings.s3.block_public_access.ignore_public_acls, null)
-  restrict_public_buckets = try(var.settings.s3.block_public_access.restrict_public_buckets, null)
+  count                   = try(var.settings.s3.configure_public_access, false) ? 1 : 0
+  block_public_acls       = try(var.settings.s3.block_public_acls, null)
+  block_public_policy     = try(var.settings.s3.block_public_policy, null)
+  ignore_public_acls      = try(var.settings.s3.ignore_public_acls, null)
+  restrict_public_buckets = try(var.settings.s3.restrict_public_buckets, null)
 }
