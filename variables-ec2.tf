@@ -23,7 +23,12 @@
 #     http_tokens: "required" | "optional" | "no-preference"   # default is "required"
 #     http_put_response_hop_limit: 1 to 64               # default is null implies "-1" (no limit)
 #     tags: "enabled" |  "disabled" | "no-preference"          # default is null implies "no-preference"
-#   ebs_
+#   vpc:
+#     block_public_access: "block-bidirectional" | "block-ingress" | "off" # default is "off"
+#     exclusions:
+#       - mode: "allow-ingress" | "allow-bidirectional" # Required: Mode of exclusion
+#         vpc_id: "vpc-12345678" # Optional: VPC ID to exclude from public access options
+#         subnet_id: "subnet-12345678" # Optional: Subnet ID to exclude
 variable "settings" {
   description = "Settings for the EC2 instance metadata defaults."
   type        = any
