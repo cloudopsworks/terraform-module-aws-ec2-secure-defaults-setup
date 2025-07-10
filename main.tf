@@ -53,7 +53,9 @@ resource "aws_vpc_block_public_access_exclusion" "this_vpcs" {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.vpc_id => exclusion
     if try(exclusion.vpc_id, "") != "" && try(var.settings.s3.configure_public_access, false)
   }
-  tags = local.all_tags
+  internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
+  vpc_id                          = try(each.value.vpc_id, null)
+  tags                            = local.all_tags
 }
 
 resource "aws_vpc_block_public_access_exclusion" "this_subnets" {
@@ -61,7 +63,10 @@ resource "aws_vpc_block_public_access_exclusion" "this_subnets" {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.subnet_id => exclusion
     if try(exclusion.subnet_id, "") != "" && try(var.settings.s3.configure_public_access, false)
   }
-  tags = local.all_tags
+  internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
+  vpc_id                          = try(each.value.vpc_id, null)
+  subnet_id                       = try(each.value.subnet_id, null)
+  tags                            = local.all_tags
 }
 
 resource "aws_s3_account_public_access_block" "this" {
