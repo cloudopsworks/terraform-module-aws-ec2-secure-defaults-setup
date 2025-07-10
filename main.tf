@@ -44,14 +44,14 @@ resource "aws_ebs_snapshot_block_public_access" "this" {
 }
 
 resource "aws_vpc_block_public_access_options" "this" {
-  count                       = try(var.settings.s3.configure_public_access, false) ? 1 : 0
+  count                       = try(var.settings.vpc.configure_public_access, false) ? 1 : 0
   internet_gateway_block_mode = try(var.settings.vpc.block_public_access, "off")
 }
 
 resource "aws_vpc_block_public_access_exclusion" "this_vpcs" {
   for_each = {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.vpc_id => exclusion
-    if try(exclusion.vpc_id, "") != "" && try(var.settings.s3.configure_public_access, false)
+    if try(exclusion.vpc_id, "") != "" && try(var.settings.vpc.configure_public_access, false)
   }
   internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
   vpc_id                          = try(each.value.vpc_id, null)
@@ -61,7 +61,7 @@ resource "aws_vpc_block_public_access_exclusion" "this_vpcs" {
 resource "aws_vpc_block_public_access_exclusion" "this_subnets" {
   for_each = {
     for exclusion in try(var.settings.vpc.exclusions, []) : exclusion.subnet_id => exclusion
-    if try(exclusion.subnet_id, "") != "" && try(var.settings.s3.configure_public_access, false)
+    if try(exclusion.subnet_id, "") != "" && try(var.settings.vpc.configure_public_access, false)
   }
   internet_gateway_exclusion_mode = try(each.value.mode, "allow-ingress")
   vpc_id                          = try(each.value.vpc_id, null)
