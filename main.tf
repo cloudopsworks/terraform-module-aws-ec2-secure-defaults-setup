@@ -76,3 +76,8 @@ resource "aws_s3_account_public_access_block" "this" {
   ignore_public_acls      = try(var.settings.s3.ignore_public_acls, null)
   restrict_public_buckets = try(var.settings.s3.restrict_public_buckets, null)
 }
+
+resource "aws_ssm_service_setting" "this" {
+  setting_id    = "/ssm/documents/console/public-sharing-permission"
+  setting_value = "Disable"
+}
