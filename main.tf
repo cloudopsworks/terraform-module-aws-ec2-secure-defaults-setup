@@ -77,6 +77,10 @@ resource "aws_s3_account_public_access_block" "this" {
   restrict_public_buckets = try(var.settings.s3.restrict_public_buckets, null)
 }
 
+moved {
+  from = aws_ssm_service_setting.this
+  to   = aws_ssm_service_setting.public_sharing_permission
+}
 resource "aws_ssm_service_setting" "public_sharing_permission" {
   setting_id    = "/ssm/documents/console/public-sharing-permission"
   setting_value = "Disable"
