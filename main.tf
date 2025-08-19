@@ -77,7 +77,23 @@ resource "aws_s3_account_public_access_block" "this" {
   restrict_public_buckets = try(var.settings.s3.restrict_public_buckets, null)
 }
 
-resource "aws_ssm_service_setting" "this" {
+resource "aws_ssm_service_setting" "public_sharing_permission" {
   setting_id    = "/ssm/documents/console/public-sharing-permission"
   setting_value = "Disable"
+}
+
+resource "aws_ssm_service_setting" "script_log_destination" {
+  setting_id    = "/ssm/automation/customer-script-log-destination"
+  setting_value = "CloudWatch"
+}
+
+resource "aws_cloudwatch_log_group" "script_log_destination_name" {
+  name              = "/aws/ssm/automation/${local.system_name}"
+  retention_in_days = 90
+  tags              = local.all_tags
+}
+
+resource "aws_ssm_service_setting" "script_log_destination_name" {
+  setting_id    = "/ssm/automation/customer-script-log-group-name"
+  setting_value = aws_cloudwatch_log_group.script_log_destination_name.name
 }
