@@ -39,7 +39,7 @@
 #       enabled: true                # (Optional) Default: true under ai_security, nist_800_53, otherwise false. Once applied, keep true (see upgrade notes)
 #       deletion_window_in_days: 30  # (Optional) 7-30. Default: 30
 #       enable_key_rotation: true    # (Optional) KMS.4. Default: true; must stay true under cis, pci_dss, nist_800_53
-#       rotation_period_in_days: 365 # (Optional) 90-2560. Default: 365
+#       rotation_period_in_days: 90  # (Optional) Rotation interval in days, 90-2560. Default: 90
 #       is_enabled: true             # (Optional) Default: true
 #       policy_documents: []         # (Optional) Extra key policy JSON documents merged into the module policy (e.g. cross-account snapshot sharing). Default: []
 #   vpc:                             # (Optional) VPC account settings.

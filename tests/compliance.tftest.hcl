@@ -41,8 +41,8 @@ run "defaults_apply_cis_pci_ai" {
     error_message = "s3 bpa not enforced"
   }
   assert {
-    condition     = length(aws_kms_key.ebs_key) == 1 && length(aws_ebs_default_kms_key.this) == 1
-    error_message = "ai_security should create EBS CMK"
+    condition     = length(aws_kms_key.ebs_key) == 1 && length(aws_ebs_default_kms_key.this) == 1 && aws_kms_key.ebs_key[0].rotation_period_in_days == 90
+    error_message = "ai_security should create EBS CMK rotating every 90 days"
   }
   assert {
     condition     = length(aws_ec2_image_block_public_access.this) == 1 && aws_ec2_image_block_public_access.this[0].state == "block-new-sharing"
@@ -248,5 +248,16 @@ run "allowed_images_mixed_criteria_keys" {
   assert {
     condition     = length(aws_ec2_allowed_images_settings.this) == 1 && length(aws_ec2_allowed_images_settings.this[0].image_criterion) == 2
     error_message = "mixed criteria entries must plan"
+  }
+}
+
+run "ebs_kms_rotation_period_adjustable" {
+  command = plan
+  variables {
+    settings = { ebs = { default_kms_key = { rotation_period_in_days = 180 } } }
+  }
+  assert {
+    condition     = aws_kms_key.ebs_key[0].rotation_period_in_days == 180
+    error_message = "rotation period must be adjustable"
   }
 }

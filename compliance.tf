@@ -41,7 +41,7 @@ locals {
   default_ami_block_public   = local.compliance.pci_dss || local.compliance.ai_security || local.compliance.nist_800_53
   default_serial_console_off = local.compliance.nist_800_53
   kms_deletion_window_days   = 30
-  kms_rotation_period_days   = 365
+  kms_rotation_period_days   = 90 # Default cryptoperiod; adjustable per key through settings
 
   # Effective settings
   imds_http_tokens          = try(var.settings.instance_metadata.http_tokens, "required")
