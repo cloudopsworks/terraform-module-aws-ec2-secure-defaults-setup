@@ -7,7 +7,7 @@ addAssignees: true
 # A list of reviewers to be added to pull requests (GitHub user name)
 # Teams are not supported (wontfix): https://github.com/kentaro-m/auto-assign/issues/39
 reviewers:
-  - berahac
+  - cloudopsworks-dev
   - cloudopsworks-bot
 
 # A number of reviewers added to the pull request

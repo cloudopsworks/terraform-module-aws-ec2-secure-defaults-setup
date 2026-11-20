@@ -1,23 +1,5 @@
 # Module configuration
-# Required variables
-{{- range .requiredVariables }}
-{{- if ne .Name "org"}}
-# Description {{ .Description }} , Type: {{ .Type }}
-{{ .Name }}: {{ .DefaultValuePlaceholder }}
-{{- end }}
-
-{{- end }}
-# Optional variables
-{{- range .optionalVariables }}
-{{- if ne .Name "is_hub" "spoke_def" "extra_args" }}
-# Description {{ .Description }} , Type: {{ .Type }}
-#{{ .Name }}: {{ .DefaultValue }}
-{{- end }}
-
-{{- end }}
-
-
-# Full settings reference: replace the "#settings" line above with the block below when customising.
+# Settings reference: uncomment the keys you need (all are optional; explicit values win over compliance-profile defaults).
 #settings:
 #  compliance:                      # (Optional) Compliance profiles aligned to AWS Security Hub CSPM standards.
 #    cis: true                      # (Optional) CIS AWS Foundations Benchmark v3.0.0 / v5.0.0. Default: true
