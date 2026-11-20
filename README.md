@@ -3,8 +3,7 @@
   ** 
   ** This file was automatically generated. 
   ** 1) Make all changes to `README.yaml` 
-  ** 2) Run `make init` (you only need to do this once)
-  ** 3) Run`make readme` to rebuild this file. 
+  ** 2) Run `tronador readme build` to rebuild this file.
   -->
 [![README Header][readme_header_img]][readme_header_link]
 
@@ -12,10 +11,12 @@
 
 # Terraform AWS EC2 Defaults Security Baseline Setup
 
+ [![Latest Release](https://img.shields.io/github/release/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup/releases/latest) [![Last Updated](https://img.shields.io/github/last-commit/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup/commits)
 
 
-
-AWS EC2 Security Baseline Setup Module for configuring default security settings for EC2 instances, EBS volumes, and metadata service options across an AWS account.
+Account- and region-level AWS security baseline for EC2, EBS, VPC, S3 and SSM, with compliance profiles aligned to the
+AWS Security Hub CSPM standards: CIS AWS Foundations Benchmark, PCI DSS, AI Security Best Practices v1.0.0 (enabled by
+default) and NIST SP 800-53 Rev. 5 (opt-in).
 
 
 ---
@@ -45,9 +46,93 @@ We have [*lots of terraform modules*][terraform_modules] that are Open Source an
 
 ## Introduction
 
-This Terraform module implements AWS security best practices by setting up default configurations for EC2 instances
-and EBS volumes. It manages instance metadata service settings, EBS encryption defaults, KMS key management,
-and EBS snapshot access controls at the account level.
+This module applies secure defaults for one AWS account in one region: IMDSv2 instance metadata defaults, EBS
+encryption by default with an optional customer managed KMS key, EBS snapshot and AMI public-sharing blocks, EC2 serial
+console and Allowed AMIs settings, VPC Block Public Access, S3 account-level Block Public Access, and SSM document
+sharing and Automation logging settings.
+
+### Compliance profiles
+
+`settings.compliance` turns on profiles that change the **default** of each setting. A value you set explicitly always
+wins. If an explicit value contradicts an enabled framework, `terraform_data.compliance_guard` fails the plan. To waive
+a single Security Hub control, add its ID to `settings.compliance.exceptions`.
+
+| Profile | Default | Standard |
+|---------|---------|----------|
+| `cis` | `true` | CIS AWS Foundations Benchmark v3.0.0 / v5.0.0 |
+| `pci_dss` | `true` | PCI DSS v3.2.1 / v4.0.1 |
+| `ai_security` | `true` | AWS AI Security Best Practices v1.0.0 (supporting controls) |
+| `nist_800_53` | `false` | NIST SP 800-53 Rev. 5 |
+
+### Control mapping
+
+"Guard" means the plan fails if an explicit setting contradicts the control while the listed frameworks are enabled.
+The guard checks this module's **account defaults** only. Instances or launch templates that set their own options
+can still produce Security Hub findings; use SCPs or EC2 declarative policies to prevent those.
+
+| Control / requirement | Setting | Profile default | Guard under |
+|-----------------------|---------|-----------------|-------------|
+| EC2.8 — IMDSv2 (CIS v5 5.7 / v3 5.6, PCI DSS v4.0.1 2.2.6, NIST AC-3) — supporting account default | `instance_metadata.http_tokens` | `required` | cis, pci_dss, nist_800_53 |
+| EC2.7 — EBS default encryption (CIS v5 5.1.1 / v3 2.2.1, NIST SC-28) | `ebs.encryption_by_default` | `true` | cis, nist_800_53 |
+| KMS.4 — key rotation (CIS 3.6, PCI DSS v4.0.1 3.7.4, NIST SC-12) | `*.kms_key.enable_key_rotation` | `true` | cis, pci_dss, nist_800_53 |
+| Customer managed keys (AI Security Best Practices theme, NIST SC-12 / SC-28) | `ebs.default_kms_key.enabled` | `true` under ai_security, nist_800_53 | — |
+| EC2.1 — public snapshots (PCI DSS v3.2.1 1.3.1 / 7.2.1, NIST AC-3 / SC-7) and EC2.182 | `ebs.snapshot_block_public_access` | `block-all-sharing` | pci_dss, nist_800_53 |
+| AMI public sharing (supporting, no Security Hub control) | `ec2.image_block_public_access` | `block-new-sharing` under pci_dss, ai_security, nist_800_53 | — |
+| S3.1 — account Block Public Access (CIS 2.1.4, PCI DSS v4.0.1 1.4.4, NIST AC-3 / SC-7) | `s3.*` | all four flags `true` under cis, pci_dss, nist_800_53 (owning deployment only) | cis, pci_dss, nist_800_53 |
+| Serial console access (NIST AC-17 / CM-7, supporting) | `ec2.serial_console_access` | `false` under nist_800_53 | — |
+| Log retention (PCI DSS 10.5.1 requirement; CloudWatch.16 / NIST AU-11) | `ssm.automation_logs.retention_in_days` | `365` under pci_dss, nist_800_53 (else `90`) | — |
+| Log encryption with CMK (NIST AU-9 / SC-28, supporting) | `ssm.automation_logs.kms_key.enabled` | `true` under nist_800_53 | — |
+| SSM.6 — Automation CloudWatch logging | always managed | CloudWatch destination | — |
+| SSM.7 — documents block public sharing | always managed | `Disable` | — |
+| EC2.2 — default VPC default security group (CIS v5 5.5 / v3 5.4) | `vpc.restrict_default_vpc_security_group` | opt-in only (can cut traffic) | — |
+| Allowed AMIs (NIST CM-7(5), supporting) | `ec2.allowed_images` | opt-in only | — |
+| EC2.172 — VPC Block Public Access | `vpc.configure_public_access` | opt-in only (can cut traffic) | — |
+
+The IMDS hop limit is left at "no preference". Setting it to 2 at account level would let bridge-networked
+containers reach instance credentials on AMIs that default to 1. Set `http_put_response_hop_limit: 1` for the
+strictest posture.
+
+### Scope and prerequisites
+
+- **AI Security Best Practices v1.0.0**: all 31 controls are attributes of Amazon Bedrock, Bedrock AgentCore and
+  SageMaker resources, so they must be configured on those resources. This module supplies the supporting account
+  baseline: a customer managed EBS key (`ebs_kms_key_arn` output), IMDSv2 by default, and blocks on public AMI and
+  snapshot sharing.
+- **EC2.6 (VPC flow logs)** and the default security groups of non-default VPCs belong to `terraform-aws-vpc-setup`.
+- Security Hub standard subscriptions, CloudTrail and AWS Config are out of scope.
+- **S3 Block Public Access is account-wide.** Deploy this module with `s3.manage_account_settings: true` in exactly one
+  region, and set it to `false` everywhere else **before their first 2.x apply**. In a region that has already applied
+  2.x, first run `terragrunt state rm 'aws_s3_account_public_access_block.this[0]'` and only then set it to `false`;
+  otherwise that apply deletes the account-wide setting. Destroying the owning deployment also deletes it.
+- The EBS CMK key policy mirrors the AWS managed `aws/ebs` key: any principal in the account may use it, but only
+  through EC2 in this region. Auto Scaling, Spot, EC2 Fleet, EKS node groups and roles without explicit KMS
+  permissions keep launching. Add extra statements (for example, cross-account snapshot sharing) through
+  `ebs.default_kms_key.policy_documents`.
+
+### Upgrading from 1.x
+
+The CIS, PCI DSS and AI Security profiles are on by default. **Choose your profile flags before the first 2.x apply.**
+The first apply will:
+- enable account-wide S3 Block Public Access, taking over any existing setting (owning deployment only),
+- create a customer managed KMS key and make it the EBS default for new volumes, replacing any default key set
+  outside this module,
+- replace the policy of an existing module-managed EBS key, overwriting statements added outside Terraform (re-add
+  them through `policy_documents`),
+- set AMI block public access to `block-new-sharing` and SSM Automation log retention to 365 days.
+
+Both module-managed KMS keys have `prevent_destroy`. Turning off `ai_security`/`nist_800_53` after the keys exist
+makes the plan fail instead of scheduling key deletion, which would make every volume, snapshot, AMI or log
+encrypted with the key unrecoverable. Keep `ebs.default_kms_key.enabled: true`, or stop managing the key without
+deleting it: run `terragrunt state rm 'aws_kms_key.ebs_key[0]'` (or `'aws_kms_key.automation_logs[0]'`), then apply. The
+alias is removed and the account EBS default resets to `aws/ebs`; the key and existing data are untouched.
+
+Other changes:
+- VPC Block Public Access exclusions now default to mode `allow-egress`; the previous default `allow-ingress` was
+  rejected by the provider.
+- An exclusion entry with both `vpc_id` and `subnet_id` now creates only the subnet exclusion, and the VPC-level
+  exclusion previously created from it is destroyed.
+- `settings.compliance.exceptions` waives only the plan-time guard. Defaults still apply, so to relax a control,
+  also set the explicit value.
 
 ## Usage
 
@@ -56,78 +141,163 @@ and EBS snapshot access controls at the account level.
 Instead pin to the release tag (e.g. `?ref=vX.Y.Z`) of one of our [latest releases](https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup/releases).
 
 
-Configure the module settings using YAML format in your terraform variables:
+Bootstrap a deployment with Terragrunt scaffold:
+
+```sh
+# 1. Create and enter the target deployment directory
+mkdir -p <environment>/<region>/<spoke>/ec2-secure-defaults
+cd <environment>/<region>/<spoke>/ec2-secure-defaults
+
+# 2. Scaffold the module (do NOT use --working-dir)
+terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup
+
+# 3. Edit inputs.yaml with deployment-specific values
+#    (all keys and comments are pre-populated from .boilerplate/inputs.yaml)
+vi inputs.yaml
+
+# 4. Apply
+terragrunt apply
+```
+
+Generated `inputs.yaml`:
 
 ```yaml
 settings:
-  ebs:
-    encryption_by_default: true
-    snapshot_block_public_access: block-all-sharing
-    default_kms_key:
-      enabled: true
-      deletion_window_in_days: 30
-      enable_key_rotation: true
-      rotation_period_in_days: 365
-      is_enabled: true
-  instance_metadata:
-    http_endpoint: "enabled"
-    http_tokens: "required"
-    http_put_response_hop_limit: 1
-    tags: "enabled"
-  vpc:
-    block_public_access: "block-bidirectional" | "block-ingress" | "off" # default is "off"
-    exclusions:
-      - mode: "allow-ingress" | "allow-bidirectional" # Required: Mode of exclusion
-        vpc_id: "vpc-12345678" # Optional: VPC ID to exclude from public access options
-        subnet_id: "subnet-12345678" # Optional: Subnet ID to exclude
-  s3:
-    block_public_acls: true | false # default is false
-    block_public_policy: true | false # default is false
-    ignore_public_acls: true | false # default is false
-    restrict_public_buckets: true | false # default is false
+  compliance:                      # (Optional) Compliance profiles aligned to AWS Security Hub CSPM standards.
+    cis: true                      # (Optional) CIS AWS Foundations Benchmark v3.0.0 / v5.0.0. Default: true
+    pci_dss: true                  # (Optional) PCI DSS v3.2.1 / v4.0.1. Default: true
+    ai_security: true              # (Optional) AWS AI Security Best Practices v1.0.0 supporting controls. Default: true
+    nist_800_53: false             # (Optional) NIST SP 800-53 Rev. 5 hardening. Default: false
+    exceptions: []                 # (Optional) Security Hub control IDs whose plan-time guard is waived (defaults still apply): EC2.1 (alias EC2.182), EC2.7, EC2.8, KMS.4, S3.1. Default: []
+  instance_metadata:               # (Optional) Account-level EC2 instance metadata defaults (supports EC2.8).
+    http_endpoint: "enabled"       # (Optional) "enabled" | "disabled" | "no-preference". Default: "enabled"
+    http_tokens: "required"        # (Optional) "required" | "optional" | "no-preference". Default: "required"; must stay "required" under cis, pci_dss, nist_800_53
+    http_put_response_hop_limit: 1 # (Optional) 1-64 or -1 (no preference). Default: no preference. Use 1 for strictest; 2 only where containers need IMDS
+    tags: "disabled"               # (Optional) "enabled" | "disabled" | "no-preference". Default: no preference
+  ec2:                             # (Optional) EC2 account attributes.
+    image_block_public_access: "block-new-sharing" # (Optional) "block-new-sharing" | "unblocked". Default: "block-new-sharing" under pci_dss, ai_security, nist_800_53, otherwise unmanaged
+    serial_console_access: false   # (Optional) true | false. Default: false under nist_800_53, otherwise unmanaged
+    allowed_images:                # (Optional) Allowed AMIs account setting (NIST CM-7(5)). Default: unmanaged; removing the block disables it
+      state: "audit-mode"          # (Required when set) "enabled" | "audit-mode". Start with "audit-mode"
+      criteria:                    # (Required when state is "enabled") An AMI is allowed when it matches any entry
+        - image_providers: ["amazon"]      # (Optional) "amazon", "aws-marketplace", "aws-backup-vault" or 12-digit account IDs
+          image_names: ["al2023-ami-*"]    # (Optional) AMI name patterns, wildcards * and ?
+          marketplace_product_codes: []    # (Optional) AWS Marketplace product codes
+          maximum_days_since_created: 365  # (Optional) Max AMI age in days
+          maximum_days_since_deprecated: 0 # (Optional) Max days since AMI deprecation
+  ebs:                             # (Optional) EBS account defaults.
+    encryption_by_default: true    # (Optional) EC2.7. Default: true; must stay true under cis, nist_800_53
+    snapshot_block_public_access: "block-all-sharing" # (Optional) "block-all-sharing" | "block-new-sharing" | "unblocked". Default: "block-all-sharing"; must stay "block-all-sharing" under pci_dss, nist_800_53
+    default_kms_key:               # (Optional) Module-managed customer managed KMS key set as the account EBS default (protected by prevent_destroy).
+      enabled: true                # (Optional) Default: true under ai_security, nist_800_53, otherwise false. Once applied, keep true (see upgrade notes)
+      deletion_window_in_days: 30  # (Optional) 7-30. Default: 30
+      enable_key_rotation: true    # (Optional) KMS.4. Default: true; must stay true under cis, pci_dss, nist_800_53
+      rotation_period_in_days: 365 # (Optional) 90-2560. Default: 365
+      is_enabled: true             # (Optional) Default: true
+      policy_documents: []         # (Optional) Extra key policy JSON documents merged into the module policy (e.g. cross-account snapshot sharing). Default: []
+  vpc:                             # (Optional) VPC account settings.
+    configure_public_access: false # (Optional) Manage VPC Block Public Access (EC2.172). Default: false
+    block_public_access: "off"     # (Optional) "block-bidirectional" | "block-ingress" | "off". Default: "off"
+    exclusions:                    # (Optional) VPC Block Public Access exclusions. Default: []
+      - mode: "allow-egress"       # (Optional) "allow-egress" | "allow-bidirectional". Default: "allow-egress"
+        vpc_id: "vpc-12345678"     # (Optional) VPC to exclude; set either vpc_id or subnet_id
+        subnet_id: "subnet-12345678" # (Optional) Subnet to exclude; takes precedence over vpc_id
+    restrict_default_vpc_security_group: false # (Optional) Remove all rules from the default VPC's default security group (EC2.2). Default: false
+  s3:                              # (Optional) S3 account-level Block Public Access (S3.1). Global setting: own it from one regional deployment only.
+    manage_account_settings: true  # (Optional) This deployment owns account-wide S3 settings. Set false in every other region. Default: true
+    configure_public_access: true  # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings, otherwise false
+    block_public_acls: true        # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
+    block_public_policy: true      # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
+    ignore_public_acls: true       # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
+    restrict_public_buckets: true  # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
+  ssm:                             # (Optional) SSM Automation logging (SSM.6).
+    automation_logs:
+      retention_in_days: 365       # (Optional) CloudWatch Logs retention value. Default: 365 under pci_dss, nist_800_53 (PCI DSS 10.5.1, CloudWatch.16), otherwise 90
+      kms_key:
+        arn: ""                    # (Optional) Existing KMS key ARN (not an alias) for the log group; disables key creation. Default: ""
+        enabled: false             # (Optional) Create a dedicated logs CMK (protected by prevent_destroy). Default: true under nist_800_53, otherwise false
+        deletion_window_in_days: 30  # (Optional) 7-30. Default: 30
+        enable_key_rotation: true    # (Optional) KMS.4. Default: true
+        rotation_period_in_days: 365 # (Optional) 90-2560. Default: 365
+```
+
+Generated `terragrunt.hcl`:
+
+```hcl
+locals {
+  local_vars  = yamldecode(file("./inputs.yaml"))
+  spoke_vars  = yamldecode(file(find_in_parent_folders("spoke-inputs.yaml")))
+  region_vars = yamldecode(file(find_in_parent_folders("region-inputs.yaml")))
+  env_vars    = yamldecode(file(find_in_parent_folders("env-inputs.yaml")))
+  global_vars = yamldecode(file(find_in_parent_folders("global-inputs.yaml")))
+  # ... tag files merged into local.tags
+}
+
+include "root" {
+  path = find_in_parent_folders("root.hcl")
+}
+
+terraform {
+  source = "git::https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup.git//?ref=<version>"
+}
+
+inputs = {
+  is_hub     = false
+  org        = local.env_vars.org
+  spoke_def  = local.spoke_vars.spoke
+  settings   = try(local.local_vars.settings, {})
+  extra_tags = local.tags
+}
 ```
 
 ## Quick Start
 
-1. Add this module to your Terraform/Terragrunt configuration
-2. Configure the minimum required settings:
-   ```yaml
-   settings:
-     ebs:
-       encryption_by_default: true
-     instance_metadata:
-       http_tokens: "required"
-   ```
-3. Run terraform init and apply
+1. Scaffold a deployment: `terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup`
+2. Leave `settings` empty to apply the CIS, PCI DSS and AI Security defaults, or set `settings.compliance.nist_800_53: true`.
+3. In multi-region accounts, set `settings.s3.manage_account_settings: false` in every region except one.
+4. Run `terragrunt plan`, review the S3 Block Public Access and EBS default KMS key changes, then `terragrunt apply`.
 
 
 ## Examples
 
-terragrunt.hcl example:
-```hcl
-include {
-  path = find_in_parent_folders()
-}
+Enable NIST SP 800-53 on top of the default profiles:
 
-terraform {
-  source = "git::https://github.com/cloudopsworks/terraform-module-aws-ec2-secure-defaults-setup.git?ref=v1.0.0"
-}
+```yaml
+settings:
+  compliance:
+    nist_800_53: true
+```
 
-inputs = {
-  settings = {
-    ebs = {
-      encryption_by_default = true
-      snapshot_block_public_access = "block-all-sharing"
-      default_kms_key = {
-        enabled = true
-      }
-    }
-    instance_metadata = {
-      http_tokens = "required"
-      http_endpoint = "enabled"
-    }
-  }
-}
+Account hosting a public S3 static website: keep the other controls, waive the S3.1 guard and relax only the
+policy-based flags:
+
+```yaml
+settings:
+  compliance:
+    exceptions: ["S3.1"]
+  s3:
+    block_public_policy: false
+    restrict_public_buckets: false
+```
+
+Secondary region of a multi-region account (S3 account settings owned elsewhere). Set this before the region's
+first 2.x apply, or `terragrunt state rm 'aws_s3_account_public_access_block.this[0]'` first:
+
+```yaml
+settings:
+  s3:
+    manage_account_settings: false
+```
+
+No compliance-driven defaults (new accounts, or before the first 2.x apply; see the upgrade notes for applied
+accounts):
+
+```yaml
+settings:
+  compliance:
+    cis: false
+    pci_dss: false
+    ai_security: false
 ```
 
 
@@ -147,32 +317,39 @@ Available targets:
 ## Requirements
 
 | Name | Version |
-|------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3 |
+| ---- | ------- |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.35 |
 
 ## Providers
 
 | Name | Version |
-|------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.35 |
+| ---- | ------- |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.73.0 |
+| <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
 ## Modules
 
 | Name | Source | Version |
-|------|--------|---------|
-| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.9 |
+| ---- | ------ | ------- |
+| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.10 |
 
 ## Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [aws_cloudwatch_log_group.script_log_destination_name](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
+| [aws_default_security_group.default_vpc](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/default_security_group) | resource |
 | [aws_ebs_default_kms_key.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ebs_default_kms_key) | resource |
 | [aws_ebs_encryption_by_default.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ebs_encryption_by_default) | resource |
 | [aws_ebs_snapshot_block_public_access.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ebs_snapshot_block_public_access) | resource |
+| [aws_ec2_allowed_images_settings.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_allowed_images_settings) | resource |
+| [aws_ec2_image_block_public_access.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_image_block_public_access) | resource |
 | [aws_ec2_instance_metadata_defaults.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_instance_metadata_defaults) | resource |
+| [aws_ec2_serial_console_access.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_serial_console_access) | resource |
+| [aws_kms_alias.automation_logs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_alias.ebs_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
+| [aws_kms_key.automation_logs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_kms_key.ebs_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_s3_account_public_access_block.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_account_public_access_block) | resource |
 | [aws_ssm_service_setting.public_sharing_permission](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_service_setting) | resource |
@@ -181,25 +358,36 @@ Available targets:
 | [aws_vpc_block_public_access_exclusion.this_subnets](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_exclusion) | resource |
 | [aws_vpc_block_public_access_exclusion.this_vpcs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_exclusion) | resource |
 | [aws_vpc_block_public_access_options.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_block_public_access_options) | resource |
+| [terraform_data.compliance_guard](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_iam_policy_document.automation_logs_kms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.ebs_kms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_partition.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/partition) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
+| [aws_vpcs.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/vpcs) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_extra_tags"></a> [extra\_tags](#input\_extra\_tags) | Extra tags to add to the resources | `map(string)` | `{}` | no |
 | <a name="input_is_hub"></a> [is\_hub](#input\_is\_hub) | Is this a hub or spoke configuration? | `bool` | `false` | no |
 | <a name="input_org"></a> [org](#input\_org) | Organization details | <pre>object({<br/>    organization_name = string<br/>    organization_unit = string<br/>    environment_type  = string<br/>    environment_name  = string<br/>  })</pre> | n/a | yes |
-| <a name="input_settings"></a> [settings](#input\_settings) | Settings for the EC2 instance metadata defaults. | `any` | `{}` | no |
+| <a name="input_settings"></a> [settings](#input\_settings) | (Optional) Account-level EC2, EBS, VPC, S3 and SSM secure defaults with compliance profiles (CIS, PCI DSS, AI Security on; NIST 800-53 off). Default: {} | `any` | `{}` | no |
 | <a name="input_spoke_def"></a> [spoke\_def](#input\_spoke\_def) | Spoke ID Number, must be a 3 digit number | `string` | `"001"` | no |
 
 ## Outputs
 
 | Name | Description |
-|------|-------------|
-| <a name="output_ebs_kms_key_alias"></a> [ebs\_kms\_key\_alias](#output\_ebs\_kms\_key\_alias) | n/a |
-| <a name="output_ebs_kms_key_arn"></a> [ebs\_kms\_key\_arn](#output\_ebs\_kms\_key\_arn) | n/a |
-| <a name="output_ebs_kms_key_id"></a> [ebs\_kms\_key\_id](#output\_ebs\_kms\_key\_id) | n/a |
+| ---- | ----------- |
+| <a name="output_compliance_exceptions"></a> [compliance\_exceptions](#output\_compliance\_exceptions) | AWS Security Hub control IDs waived through settings.compliance.exceptions. |
+| <a name="output_compliance_frameworks"></a> [compliance\_frameworks](#output\_compliance\_frameworks) | Compliance frameworks active for this deployment (cis, pci\_dss, ai\_security, nist\_800\_53). |
+| <a name="output_ebs_kms_key_alias"></a> [ebs\_kms\_key\_alias](#output\_ebs\_kms\_key\_alias) | Alias of the module-managed default EBS KMS key, or null when the module does not create one. |
+| <a name="output_ebs_kms_key_arn"></a> [ebs\_kms\_key\_arn](#output\_ebs\_kms\_key\_arn) | ARN of the module-managed default EBS KMS key, or null when the module does not create one. |
+| <a name="output_ebs_kms_key_id"></a> [ebs\_kms\_key\_id](#output\_ebs\_kms\_key\_id) | ID of the module-managed default EBS KMS key, or null when the module does not create one. |
+| <a name="output_ssm_automation_log_group_arn"></a> [ssm\_automation\_log\_group\_arn](#output\_ssm\_automation\_log\_group\_arn) | ARN of the CloudWatch log group receiving SSM Automation script output. |
+| <a name="output_ssm_automation_log_group_name"></a> [ssm\_automation\_log\_group\_name](#output\_ssm\_automation\_log\_group\_name) | Name of the CloudWatch log group receiving SSM Automation script output. |
+| <a name="output_ssm_automation_logs_kms_key_arn"></a> [ssm\_automation\_logs\_kms\_key\_arn](#output\_ssm\_automation\_logs\_kms\_key\_arn) | ARN of the KMS key encrypting the SSM Automation log group, or null when the log group uses CloudWatch-managed encryption. |
 
 
 
