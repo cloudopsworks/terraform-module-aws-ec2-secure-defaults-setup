@@ -190,81 +190,40 @@ resource "aws_s3_account_public_access_block" "this" {
   restrict_public_buckets = local.s3_public_access_block.restrict_public_buckets
 }
 
-## SSM - document public sharing (SSM.7) and Automation logging (SSM.6)
-moved {
-  from = aws_ssm_service_setting.this
-  to   = aws_ssm_service_setting.public_sharing_permission
-}
-resource "aws_ssm_service_setting" "public_sharing_permission" {
-  setting_id    = "/ssm/documents/console/public-sharing-permission"
-  setting_value = "Disable"
-}
-
-resource "aws_ssm_service_setting" "script_log_destination" {
-  setting_id    = "/ssm/automation/customer-script-log-destination"
-  setting_value = "CloudWatch"
-}
-
-data "aws_iam_policy_document" "automation_logs_kms" {
-  count = local.automation_logs_create_kms_key ? 1 : 0
-
-  statement {
-    sid       = "EnableAccountIamPolicies"
-    effect    = "Allow"
-    actions   = ["kms:*"]
-    resources = ["*"]
-    principals {
-      type        = "AWS"
-      identifiers = [local.account_root_arn]
-    }
-  }
-
-  statement {
-    sid       = "AllowCloudWatchLogsForAutomationLogGroup"
-    effect    = "Allow"
-    actions   = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
-    resources = ["*"]
-    principals {
-      type        = "Service"
-      identifiers = ["logs.${data.aws_region.current.region}.${data.aws_partition.current.dns_suffix}"]
-    }
-    condition {
-      test     = "ArnEquals"
-      variable = "kms:EncryptionContext:aws:logs:arn"
-      values   = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:${local.automation_log_group_name}"]
-    }
-  }
-}
-
-resource "aws_kms_key" "automation_logs" {
-  count                   = local.automation_logs_create_kms_key ? 1 : 0
-  description             = "SSM Automation CloudWatch Logs encryption key"
-  deletion_window_in_days = try(var.settings.ssm.automation_logs.kms_key.deletion_window_in_days, local.kms_deletion_window_days)
-  enable_key_rotation     = local.automation_logs_kms_key_rotation
-  rotation_period_in_days = local.automation_logs_kms_key_rotation ? try(var.settings.ssm.automation_logs.kms_key.rotation_period_in_days, local.kms_rotation_period_days) : null
-  policy                  = data.aws_iam_policy_document.automation_logs_kms[0].json
-  tags                    = local.all_tags
-
-  # Encrypted audit logs become unreadable once the key is deleted.
+## SSM account settings moved to terraform-module-aws-ssm-compliance-management (2.0.0).
+# v1.x managed these resources; forget them without destroying so upgrading never resets
+# SSM.6/SSM.7 settings or deletes retained Automation logs. Deploy the SSM module to own them.
+removed {
+  from = aws_ssm_service_setting.this # v1.0.2 address
   lifecycle {
-    prevent_destroy = true
+    destroy = false
   }
 }
 
-resource "aws_kms_alias" "automation_logs" {
-  count         = local.automation_logs_create_kms_key ? 1 : 0
-  target_key_id = aws_kms_key.automation_logs[0].id
-  name          = "alias/logs-ssm-automation-${local.system_name}"
+removed {
+  from = aws_ssm_service_setting.public_sharing_permission
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "aws_cloudwatch_log_group" "script_log_destination_name" {
-  name              = local.automation_log_group_name
-  retention_in_days = local.automation_logs_retention
-  kms_key_id        = local.automation_logs_kms_key_arn
-  tags              = local.all_tags
+removed {
+  from = aws_ssm_service_setting.script_log_destination
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "aws_ssm_service_setting" "script_log_destination_name" {
-  setting_id    = "/ssm/automation/customer-script-log-group-name"
-  setting_value = aws_cloudwatch_log_group.script_log_destination_name.name
+removed {
+  from = aws_ssm_service_setting.script_log_destination_name
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_cloudwatch_log_group.script_log_destination_name
+  lifecycle {
+    destroy = false
+  }
 }

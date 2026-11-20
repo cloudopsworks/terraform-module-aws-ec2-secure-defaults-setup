@@ -49,12 +49,8 @@ run "defaults_apply_cis_pci_ai" {
     error_message = "AMI BPA missing"
   }
   assert {
-    condition     = length(aws_ec2_serial_console_access.this) == 0 && length(aws_kms_key.automation_logs) == 0
+    condition     = length(aws_ec2_serial_console_access.this) == 0
     error_message = "nist-only resources present"
-  }
-  assert {
-    condition     = aws_cloudwatch_log_group.script_log_destination_name.retention_in_days == 365
-    error_message = "pci retention not applied"
   }
   assert {
     condition     = length(aws_default_security_group.default_vpc) == 0 && length(aws_ec2_allowed_images_settings.this) == 0
@@ -72,8 +68,8 @@ run "nist_enabled" {
     error_message = "serial console not disabled"
   }
   assert {
-    condition     = length(aws_kms_key.automation_logs) == 1 && aws_cloudwatch_log_group.script_log_destination_name.kms_key_id == "arn:aws:kms:us-east-1:123456789012:key/abc"
-    error_message = "logs CMK not wired"
+    condition     = length(aws_kms_key.ebs_key) == 1
+    error_message = "nist should create EBS CMK"
   }
 }
 
@@ -85,10 +81,6 @@ run "all_frameworks_off_is_legacy" {
   assert {
     condition     = length(aws_s3_account_public_access_block.this) == 0 && length(aws_kms_key.ebs_key) == 0 && length(aws_ec2_image_block_public_access.this) == 0
     error_message = "legacy defaults changed"
-  }
-  assert {
-    condition     = aws_cloudwatch_log_group.script_log_destination_name.retention_in_days == 90
-    error_message = "legacy retention/hop wrong"
   }
 }
 
@@ -235,17 +227,6 @@ run "vpc_exclusions_and_default_sg_and_allowed_amis" {
   assert {
     condition     = length(aws_default_security_group.default_vpc) == 1 && length(aws_ec2_allowed_images_settings.this) == 1
     error_message = "default sg / allowed images missing"
-  }
-}
-
-run "external_logs_key" {
-  command = plan
-  variables {
-    settings = { compliance = { nist_800_53 = true }, ssm = { automation_logs = { kms_key = { arn = "arn:aws:kms:us-east-1:123456789012:key/ext" } } } }
-  }
-  assert {
-    condition     = length(aws_kms_key.automation_logs) == 0 && aws_cloudwatch_log_group.script_log_destination_name.kms_key_id == "arn:aws:kms:us-east-1:123456789012:key/ext"
-    error_message = "external logs key not honoured"
   }
 }
 

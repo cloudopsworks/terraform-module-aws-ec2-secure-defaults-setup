@@ -37,15 +37,11 @@ locals {
   enforce_s3_bpa         = local.require_s3_bpa && !contains(local.compliance_exceptions, "S3.1")
 
   # Supporting controls: hardened defaults without a Security Hub control ID to enforce.
-  default_ebs_cmk               = local.compliance.ai_security || local.compliance.nist_800_53
-  default_ami_block_public      = local.compliance.pci_dss || local.compliance.ai_security || local.compliance.nist_800_53
-  default_serial_console_off    = local.compliance.nist_800_53
-  default_long_log_retention    = local.compliance.pci_dss || local.compliance.nist_800_53
-  default_automation_logs_cmk   = local.compliance.nist_800_53
-  log_retention_days_default    = 90
-  log_retention_days_compliance = 365 # PCI DSS 10.5.1 (12 months of audit history), NIST AU-11
-  kms_deletion_window_days      = 30
-  kms_rotation_period_days      = 365
+  default_ebs_cmk            = local.compliance.ai_security || local.compliance.nist_800_53
+  default_ami_block_public   = local.compliance.pci_dss || local.compliance.ai_security || local.compliance.nist_800_53
+  default_serial_console_off = local.compliance.nist_800_53
+  kms_deletion_window_days   = 30
+  kms_rotation_period_days   = 365
 
   # Effective settings
   imds_http_tokens          = try(var.settings.instance_metadata.http_tokens, "required")
@@ -63,13 +59,6 @@ locals {
     for flag in ["block_public_acls", "block_public_policy", "ignore_public_acls", "restrict_public_buckets"] :
     flag => try(var.settings.s3[flag], local.require_s3_bpa ? true : null)
   }
-
-  automation_log_group_name        = "/aws/ssm/automation/${local.system_name}"
-  automation_logs_retention        = try(var.settings.ssm.automation_logs.retention_in_days, local.default_long_log_retention ? local.log_retention_days_compliance : local.log_retention_days_default)
-  automation_logs_kms_key_arn_in   = try(var.settings.ssm.automation_logs.kms_key.arn, "")
-  automation_logs_create_kms_key   = local.automation_logs_kms_key_arn_in == "" && try(var.settings.ssm.automation_logs.kms_key.enabled, local.default_automation_logs_cmk)
-  automation_logs_kms_key_rotation = try(var.settings.ssm.automation_logs.kms_key.enable_key_rotation, true)
-  automation_logs_kms_key_arn      = local.automation_logs_create_kms_key ? aws_kms_key.automation_logs[0].arn : (local.automation_logs_kms_key_arn_in != "" ? local.automation_logs_kms_key_arn_in : null)
 
   allowed_images_state    = try(var.settings.ec2.allowed_images.state, "")
   allowed_images_criteria = try({ for idx, criterion in var.settings.ec2.allowed_images.criteria : tostring(idx) => criterion }, {})
@@ -99,8 +88,8 @@ resource "terraform_data" "compliance_guard" {
       error_message = "EC2.7 (CIS v5 5.1.1 / v3 2.2.1, NIST SC-28): settings.ebs.encryption_by_default must be true while cis or nist_800_53 is enabled. Disable those frameworks or add \"EC2.7\" to settings.compliance.exceptions."
     }
     precondition {
-      condition     = !local.enforce_kms_rotation || ((!local.ebs_kms_key_enabled || local.ebs_kms_key_rotation) && (!local.automation_logs_create_kms_key || local.automation_logs_kms_key_rotation))
-      error_message = "KMS.4 (CIS 3.6, PCI DSS 3.7.4, NIST SC-12): module-managed KMS keys must have enable_key_rotation = true while cis, pci_dss or nist_800_53 is enabled. Disable those frameworks or add \"KMS.4\" to settings.compliance.exceptions."
+      condition     = !local.enforce_kms_rotation || !local.ebs_kms_key_enabled || local.ebs_kms_key_rotation
+      error_message = "KMS.4 (CIS 3.6, PCI DSS 3.7.4, NIST SC-12): settings.ebs.default_kms_key.enable_key_rotation must be true while cis, pci_dss or nist_800_53 is enabled. Disable those frameworks or add \"KMS.4\" to settings.compliance.exceptions."
     }
     precondition {
       condition     = !local.enforce_snapshot_bpa || local.snapshot_bpa_state == "block-all-sharing"

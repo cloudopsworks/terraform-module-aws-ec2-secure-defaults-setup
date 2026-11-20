@@ -57,17 +57,8 @@
 #     block_public_policy: true      # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
 #     ignore_public_acls: true       # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
 #     restrict_public_buckets: true  # (Optional) Default: true under cis, pci_dss, nist_800_53 when manage_account_settings
-#   ssm:                             # (Optional) SSM Automation logging (SSM.6).
-#     automation_logs:
-#       retention_in_days: 365       # (Optional) CloudWatch Logs retention value. Default: 365 under pci_dss, nist_800_53 (PCI DSS 10.5.1, CloudWatch.16), otherwise 90
-#       kms_key:
-#         arn: ""                    # (Optional) Existing KMS key ARN (not an alias) for the log group; disables key creation. Default: ""
-#         enabled: false             # (Optional) Create a dedicated logs CMK (protected by prevent_destroy). Default: true under nist_800_53, otherwise false
-#         deletion_window_in_days: 30  # (Optional) 7-30. Default: 30
-#         enable_key_rotation: true    # (Optional) KMS.4. Default: true
-#         rotation_period_in_days: 365 # (Optional) 90-2560. Default: 365
 variable "settings" {
-  description = "(Optional) Account-level EC2, EBS, VPC, S3 and SSM secure defaults with compliance profiles (CIS, PCI DSS, AI Security on; NIST 800-53 off). Default: {}"
+  description = "(Optional) Account-level EC2, EBS, VPC and S3 secure defaults with compliance profiles (CIS, PCI DSS, AI Security on; NIST 800-53 off). Default: {}"
   type        = any
   default     = {}
 }
